@@ -50,7 +50,7 @@ lambda = E * nu / ((1 + nu) * (1 - 2 * nu))  # First Lamé parameter (Pa)
 mu = E / (2 * (1 + nu))                      # Second Lamé parameter (shear modulus) (Pa)
 k_mu = k / mu                                # Hydraulic conductivity (permeability/viscosity)
 
-
+dirichlet_tags = ["top_bottom", "wellbore"]
 #####################################
 ######## ADD YOU CODE HERE ##########
 #####################################

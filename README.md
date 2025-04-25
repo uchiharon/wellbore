@@ -37,7 +37,7 @@ All submitted code will be executed to verify functionality. Make sure your code
 
 ### Visualization in ParaView
 
-You can then use the open source tool [Paraview](https://www.paraview.org/) for visualization.
+You can use the open source tool [Paraview](https://www.paraview.org/) for visualization.
 Unfortunately, you cannot use this from our web-based development environment so
 you must download the files to you local computer.  First, on the Terminal
 command line in the repository directory, run

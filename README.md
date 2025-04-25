@@ -1,5 +1,7 @@
 # PGE 383 Advanced Geomechanics Final Project 
 
+I've recorded a walkthrough of this assignment here: [https://youtu.be/1mJTLYGgnq4](https://youtu.be/1mJTLYGgnq4)
+
 ## Wellbore Poroelasticity Simulation
 
 ### Overview

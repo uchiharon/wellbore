@@ -1,39 +1,36 @@
-# Homework Assignment 19
+# PGE 383 Advanced Geomechanics Final Project 
 
-![Assignment 19](https://github.com/PGE383-HPC/assignment19/actions/workflows/main.yml/badge.svg)
+## Wellbore Poroelasticity Simulation
 
-During a single-phase one-dimensional core flooding experiment, pressure readings were observed at 99 evenly spaced points in the interior of a core. The pressure as a function of $x$ observations are stored in the data file [data.csv](./data/data.csv) and shown in the figure below
+### Overview
+In this final project, you will implement a poroelastic simulation of a wellbore in plane strain conditions. You will use the Gridap.jl finite element framework to solve the coupled equations of poroelasticity around a wellbore geometry.
 
-<img src="images/data.png" width=500>
+You will simulate the poroelastic response of rock around a wellbore. The wellbore is subjected to a pressure differece from the initial pore pressure in the formation. This creates a pressure gradient that drives fluid flow and causes deformation of the rock matrix.
 
-The left essential boundary condition is $p(0) = 15$ and the right essential boundary condition is $p(1) = 5$. 
+### Assignment Tasks
 
-In [https://github.com/PGE383-HPC/assignment18](Assignment18) we used an assumed polynomial form of the mobility function 
+1. Complete the implementation of the `wellbore.jl` file using `mandel.jl` as a reference.
+2. Use the provided `wellbore.geo` file as the input geometry.
+3. Apply the following boundary conditions:
+   - At the `top_bottom` boundaries: Fix both $x$ and $y$ displacements ($u_x = 0, u_y = 0$)
+   - At the `wellbore` boundary: Apply a constant pressure of $p_b = 30.5$ MPa
+   - Initial pressure throughout the domain: $p_0 = 20.0$ MPa
+4. Use the material properties and simulation parameters already defined in `wellbore.jl`.
+5. Implement the weak form of the poroelastic equations.
+6. Set up the solver and time-stepping scheme.
+7. Generate output files for visualization.
 
-$$
-\lambda(x) = x^{\theta_1} + \theta_2
-$$
+### Submission Requirements
+- Submit your completed `wellbore.jl` file via Canvas.
+- Your code should run without errors when executed with the provided `wellbore.geo` file.
 
-where $\theta_1$ and $\theta_2$ where unknown parameters that we were trying to learn by solving the *inverse* PDE problem with [Gripap.jl](https://gridap.github.io/Gridap.jl/stable/) and [Optimisers.jl](https://fluxml.ai/Optimisers.jl/dev/).
+### Evaluation Criteria
+- Correctness of the implementation
+- Proper application of boundary conditions
+- Code organization and clarity
+- Proper implementation of the weak form
+- Successful execution of the simulation
 
-For this assignment, we will not assume any particular form of the mobility function, but instead use a *universal function approximator* in the form of an unknown neural network, i.e.  
+### Note
+All submitted code will be executed to verify functionality. Make sure your code runs correctly with the provided geometry file and parameters.
 
-$$
-\lambda(x) = \mathcal{NN}_{\vec{\theta}}(x)
-$$
-
-where ${\vec{\theta}}$ are the weights and biases of a neural network.  The template code uses the Julia package [https://github.com/FluxML/Flux.jl](Flux.jl) for assigning the architecture of the neural network (do not change).  Your job is the write the training loop to learn the weights and biases.
-
-Implement your solution in the [assignment19.jl](src/assignment19.jl) file; specifically, your job is to complete the function `train(filename::String, nepochs::Integer=5000, tolerance::Real=10, rng=MersenneTwister(1234))` where `filename` is the path to [data.csv](data/data.csv), `nepochs` is the maximum number of training iterations, `tolerance` is the loss function tolerance to stop the training iterations, and `rng` is the random number generator used to seed the inital weights and biases of the network.  The loss function has already been provided in the function `loss()`.
-
-
-## Testing
-
-To see if your answer is correct, run the following command at the Terminal
-command line from the repository's root directory
-
-```bash
-julia --project=. -e "using Pkg; Pkg.test()"
-```
-
-the tests will run and report if passing or failing.

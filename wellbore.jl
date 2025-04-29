@@ -155,7 +155,7 @@ end
 # ============================================================================
 # Define initial conditions for the problem
 u0 = VectorValue(0.0, 0.0)  # Zero initial displacement
-p0 = 20.0e6                    # Zero initial pressure
+p0 = p0                    # Initial pressure
 
 # ============================================================================
 # TRANSIENT TRIAL SPACES

@@ -54,3 +54,207 @@ dirichlet_tags = ["top_bottom", "wellbore"]
 #####################################
 ######## ADD YOU CODE HERE ##########
 #####################################
+
+# ============================================================================
+# SETUP OUTPUT AND MESH
+# ============================================================================
+# Create output directory if it doesn't exist
+output_dir = "results"
+if !isdir(output_dir)
+    mkdir(output_dir)
+end
+
+# Load the Gmsh mesh from file
+# The mesh should be a square domain with properly tagged boundaries
+model = GmshDiscreteModel("wellbore.msh")
+
+# Export the mesh for visualization
+writevtk(model, "model")  # Save model for visualization in ParaView
+
+
+# Print information about boundary entities for debugging
+# This helps verify that boundary conditions will be applied to the correct entities
+labels = get_face_labeling(model)
+for tag in dirichlet_tags
+    println("Entities tagged as $tag: ", findall(labels.tag_to_name .== tag))
+end
+
+# ============================================================================
+# DOMAIN AND INTEGRATION SETUP
+# ============================================================================
+# Set up integration degree for numerical quadrature
+degree = 2  # Quadrature order
+
+# Create triangulation and integration measures
+Ω = Triangulation(model)           # Domain triangulation
+dΩ = Measure(Ω, degree)            # Volume integration measure
+Γ = BoundaryTriangulation(model)   # Boundary triangulation
+dΓ = Measure(Γ, degree)            # Boundary integration measure
+
+# ============================================================================
+# FINITE ELEMENT SPACES
+# ============================================================================
+# Define polynomial orders for the mixed formulation
+order_u = 2  # P2 (quadratic) elements for displacement
+order_p = 1  # P1 (linear) elements for pressure - satisfies LBB condition
+
+# Create reference finite elements
+reffe_u = ReferenceFE(lagrangian, VectorValue{2,Float64}, order_u)  # Vector-valued for displacement
+reffe_p = ReferenceFE(lagrangian, Float64, order_p)                 # Scalar-valued for pressure
+
+# ============================================================================
+# BOUNDARY CONDITIONS
+# ============================================================================
+# Displacement space with Dirichlet BC on top_bottom (fixed in xy-direction)
+δu = TestFESpace(model, reffe_u, conformity=:H1, 
+                 dirichlet_tags=["top_bottom"])
+u = TrialFESpace(δu, x -> VectorValue(0.0, 0.0))  # Zero displacement at top_bottom boundary
+
+# Pressure space with Dirichlet BC on wellbore sides (drained boundary)
+δp = TestFESpace(model, reffe_p, conformity=:H1, dirichlet_tags=["wellbore"])
+p = TrialFESpace(δp, Pb)  # 31.5 pressure at wellbore boundary
+
+# Create multi-field space for the coupled problem
+Y = MultiFieldFESpace([δu, δp])  # Combined test space for displacement and pressure
+
+
+# ============================================================================
+# CONSTITUTIVE EQUATIONS
+# ============================================================================
+# Function to calculate the in-plane stress tensor (σxx, σxy, σyx, σyy)
+function sigma(u)
+    # In plane strain, εzz = 0 but σzz ≠ 0
+    # Calculate the strain tensor from displacement gradient
+    ε = symmetric_gradient(u)  # ε = (∇u + (∇u)ᵀ)/2
+    
+    # Identity tensor in 2D
+    I = TensorValue(1.0, 0.0, 0.0, 1.0)
+    
+    # Plane strain stress-strain relationship
+    # For plane strain, the constitutive equation is the same as 3D
+    # but with the constraint that εzz = 0
+    # The 2D stress tensor is: σ = λ tr(ε) I + 2μ ε
+    # where tr(ε) = εxx + εyy (since εzz = 0)
+    # This returns the 2x2 stress tensor containing σxx, σxy, σyx, σyy
+    return lambda * tr(ε) * I + 2 * mu * ε
+end
+
+# Function to calculate out-of-plane stress (σzz) for visualization
+# This is needed because in plane strain, σzz is non-zero even though εzz = 0
+function sigma_zz(u)
+    # Calculate the strain tensor
+    ε = symmetric_gradient(u)
+    
+    # In plane strain: σzz = λ(εxx + εyy) = λ·tr(ε)
+    # This is derived from the 3D constitutive equation with εzz = 0
+    return lambda * tr(ε)
+end
+
+# ============================================================================
+# INITIAL CONDITIONS
+# ============================================================================
+# Define initial conditions for the problem
+u0 = VectorValue(0.0, 0.0)  # Zero initial displacement
+p0 = 20.0e6                    # Zero initial pressure
+
+# ============================================================================
+# TRANSIENT TRIAL SPACES
+# ============================================================================
+# Create transient trial spaces for time-dependent problem
+# For this problem, our boundary conditions don't change with time,
+# but we still need to use TransientTrialFESpace for the time integration
+u_t = TransientTrialFESpace(δu)  # Transient displacement space
+p_t = TransientTrialFESpace(δp)  # Transient pressure space
+
+# Combine the transient spaces into a multi-field space
+X_t = MultiFieldFESpace([u_t, p_t])
+
+# ============================================================================
+# WEAK FORM
+# ============================================================================
+# Bilinear form a(u,p,δu,δp) - represents the weak form of the PDE system
+a(t, (u,p), (δu,δp)) = ∫( 
+    # Solid mechanics term: stress-strain relationship
+    symmetric_gradient(δu) ⊙ sigma(u) - 
+    
+    # Coupling term 1: effect of fluid pressure on solid (Biot coupling)
+    (B * divergence(δu) * p) +
+    
+    # Fluid storage term: time derivative of pressure
+    δp * (1/M) * ∂t(p) + 
+    
+    # Fluid diffusion term: Darcy's law
+    ∇(δp) ⋅ (k_mu * ∇(p)) +
+    
+    # Coupling term 2: effect of solid deformation on fluid (Biot coupling)
+    δp * B * divergence(∂t(u)) 
+) * dΩ
+
+
+# Residual form for the nonlinear solver
+res(t, (u,p), (δu,δp)) = a(t, (u,p), (δu,δp))
+
+# ============================================================================
+# TRANSIENT PROBLEM SETUP
+# ============================================================================
+# Create the transient finite element operator from the residual
+op = TransientFEOperator(res, X_t, Y)
+
+# ============================================================================
+# SOLVER CONFIGURATION
+# ============================================================================
+# Set up the linear solver (for solving linear systems within Newton iterations)
+ls = LUSolver()  # Direct LU decomposition solver
+
+# Set up the nonlinear solver (Newton's method)
+nls = NLSolver(ls, method=:newton, iterations=10, show_trace=false)
+
+# Create the ODE solver with the nonlinear solver
+Δt = dt  # Time step size
+θ = 1.0  # Backward Euler scheme (θ=1.0 is fully implicit)
+         # Note: θ=0.5 would be Crank-Nicolson, θ=0.0 would be forward Euler
+ode_solver = ThetaMethod(nls, Δt, θ)
+
+# ============================================================================
+# INITIAL SOLUTION
+# ============================================================================
+# Interpolate the initial conditions onto the FE spaces
+uh0 = interpolate_everywhere([u0, p0], X_t(0.0))
+
+# ============================================================================
+# SOLVE THE TRANSIENT PROBLEM
+# ============================================================================
+# Set time interval
+t0 = 0.0  # Initial time
+tF = T    # Final time
+
+# Solve the time-dependent problem
+# This returns a generator that yields (time, solution) pairs
+sol = solve(ode_solver, op, t0, tF, uh0)
+
+# ============================================================================
+# RESULTS VISUALIZATION
+# ============================================================================
+# Create ParaView collection (.pvd file) for time-series visualization
+createpvd(joinpath(output_dir, "results")) do pvd
+    # Save initial state (t=0)
+    u0_h, p0_h = uh0  # Extract displacement and pressure from initial solution
+    pvd[0.0] = createvtk(Ω, joinpath(output_dir, "results_0.vtu"), 
+                         cellfields=["displacement"=>u0_h, "pressure"=>p0_h])
+    
+    # Save solution at each time step
+    for (tn, uhn) in sol
+        println("Writing results for t = $tn")
+        
+        # Extract displacement and pressure from current solution
+        un_h, pn_h = uhn
+        
+        # Create VTK file for this time step with displacement and pressure fields
+        pvd[tn] = createvtk(Ω, joinpath(output_dir, "results_$(tn).vtu"), 
+                           cellfields=["displacement"=>un_h, 
+                                      "pressure"=>pn_h])
+    end
+end
+
+# Print completion message
+println("Plane strain simulation completed! Results saved in the '$output_dir' directory.")

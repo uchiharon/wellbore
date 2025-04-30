@@ -258,3 +258,15 @@ end
 
 # Print completion message
 println("Plane strain simulation completed! Results saved in the '$output_dir' directory.")
+
+
+
+
+
+
+###########################################################################################
+##                                       CHANGE DONE                                     ##
+# 1. dirichlet_tags as ["top_bottom", "wellbore"]
+# 2. mesh file changed to wellbore.msh
+# 3. change the displacement and pressure dirichlet_tags to top_bottom and wellbore respectivelu
+# 4. delete the traction term
